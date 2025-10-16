@@ -85,6 +85,8 @@ interface AppState {
   countdownValue: number | null; // 3, 2, 1, 0 for GO, null when countdown done
   raceStarted: boolean;
   raceFinished: boolean;
+  selectedCar: string; // 'car2', 'car3', 'car4', 'car5', 'car6'
+  carSelectionComplete: boolean;
   carPositions: {
     id: string;
     name: string;
@@ -93,6 +95,15 @@ interface AppState {
     finishTime: number | null;
     lapProgress: number; // 0 to 1
   }[];
+
+  // Coin collection state
+  coins: {
+    id: string;
+    position: { x: number; y: number; z: number };
+    collected: boolean;
+  }[];
+  coinsCollected: number;
+  txnsProgress: number; // 0 to 100
 }
 
 // Define actions interface
@@ -171,10 +182,17 @@ interface AppActions {
   startRaceCountdown: () => void;
   setRaceStarted: (started: boolean) => void;
   setRaceFinished: (finished: boolean) => void;
+  setSelectedCar: (carId: string) => void;
+  setCarSelectionComplete: (complete: boolean) => void;
   updateCarPosition: (carId: string, position: { x: number; y: number; z: number }, rotation: number, lapProgress: number) => void;
   setCarFinished: (carId: string, finishTime: number) => void;
   initializeRace: () => void;
   resetRace: () => void;
+
+  // Coin collection actions
+  spawnCoins: (coins: { id: string; position: { x: number; y: number; z: number } }[]) => void;
+  collectCoin: (coinId: string) => void;
+  resetCoins: () => void;
 
   // Utility getters
   canMove: () => boolean;
@@ -322,7 +340,14 @@ const initialState: AppState = {
   countdownValue: 3,
   raceStarted: false,
   raceFinished: false,
+  selectedCar: 'car2',
+  carSelectionComplete: false,
   carPositions: [],
+
+  // Coin collection state
+  coins: [],
+  coinsCollected: 0,
+  txnsProgress: 0,
 };
 
 // Maximum recent events to keep (for performance)
@@ -683,6 +708,9 @@ const useAppStore = create<AppStore>()(
       setRaceStarted: (raceStarted) => set({ raceStarted }),
       setRaceFinished: (raceFinished) => set({ raceFinished }),
 
+      setSelectedCar: (selectedCar) => set({ selectedCar }),
+      setCarSelectionComplete: (carSelectionComplete) => set({ carSelectionComplete }),
+
       updateCarPosition: (carId, position, rotation, lapProgress) =>
         set((state) => {
           const carPositions = [...state.carPositions];
@@ -744,10 +772,46 @@ const useAppStore = create<AppStore>()(
           position: { x: 1191.2, y: 5, z: 1494.8 },
           rotation: Math.PI / 2,
           velocity: { x: 0, y: 0, z: 0 },
+          coins: [],
+          coinsCollected: 0,
+          txnsProgress: 0,
           // Note: We don't modify player.game_active here - that's blockchain state
           // The movement hook guards will prevent racing movements from being sent
         });
       },
+
+      // Coin collection actions
+      spawnCoins: (newCoins) =>
+        set((state) => {
+          const coins = [
+            ...state.coins.filter((c) => !c.collected),
+            ...newCoins.map((coin) => ({ ...coin, collected: false })),
+          ];
+          return { coins };
+        }),
+
+      collectCoin: (coinId) =>
+        set((state) => {
+          const coin = state.coins.find((c) => c.id === coinId);
+          if (!coin || coin.collected) return state;
+
+          const coins = state.coins.map((c) =>
+            c.id === coinId ? { ...c, collected: true } : c
+          );
+          const coinsCollected = state.coinsCollected + 1;
+          const txnsProgress = Math.min(100, (coinsCollected / 10) * 100); // 10 coins = 100%
+
+          console.log(`💰 Coin collected! Total: ${coinsCollected}, Progress: ${txnsProgress}%`);
+
+          return { coins, coinsCollected, txnsProgress };
+        }),
+
+      resetCoins: () =>
+        set({
+          coins: [],
+          coinsCollected: 0,
+          txnsProgress: 0,
+        }),
 
       // Utility getters
       canMove: () => {
